@@ -1,0 +1,457 @@
+// server/prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// --------------------------------------
+// 1. ENUMS
+// --------------------------------------
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+enum LoanStatus {
+  ISSUED
+  RETURNED
+  OVERDUE
+}
+
+enum ComplaintStatus {
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+}
+
+enum HostelStatus {
+  OCCUPIED
+  VACATED
+}
+
+enum GatePassStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// --------------------------------------
+// 2. DYNAMIC ROLES & AUTH
+// --------------------------------------
+
+model Role {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique
+  displayName String
+  description String?
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("roles")
+}
+
+model User {
+  id              String         @id @default(auto()) @map("_id") @db.ObjectId
+  email           String         @unique
+  password        String
+  avatar          String?        // Stores full Cloudinary URL
+  roleId          String         @db.ObjectId
+  role            Role           @relation(fields: [roleId], references: [id])
+  isActive        Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  studentProfile  Student?
+  teacherProfile  Teacher?
+  adminProfile    Admin?
+  announcements   Announcement[]
+
+  @@map("users")
+}
+
+// --------------------------------------
+// 3. PROFILES
+// --------------------------------------
+
+model Admin {
+  id          String     @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String     @unique @db.ObjectId
+  fullName    String
+  phone       String?
+  bloodGroup  String?
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gatePasses  GatePass[]
+
+  @@map("admins")
+}
+
+model Teacher {
+  id            String       @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String       @unique @db.ObjectId
+  fullName      String
+  phone         String
+  address       String?
+  qualification String?
+  bloodGroup    String?
+  joiningDate   DateTime     @default(now())
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjects      Subject[]
+  classes       Class[]      @relation("ClassTeacher")
+  attendance    Attendance[]
+  loans         Loan[]
+  onlineExams   OnlineExam[]
+
+  @@map("teachers")
+}
+
+model Student {
+  id              String           @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String           @unique @db.ObjectId
+  admissionNo     String           @unique
+  fullName        String
+  dob             DateTime
+  gender          Gender
+  address         String?
+  phone           String?
+  bloodGroup      String?
+  needsHostel     Boolean          @default(false)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classId         String           @db.ObjectId
+  class           Class            @relation(fields: [classId], references: [id])
+  attendance      Attendance[]
+  results         Result[]
+  loans           Loan[]
+  testSubmissions TestSubmission[]
+  hostelRecord    HostelAdmission?
+  complaints      Complaint[]
+  gatePasses      GatePass[]
+
+  @@map("students")
+}
+
+// --------------------------------------
+// 4. ACADEMIC STRUCTURE
+// --------------------------------------
+
+model Class {
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
+  name        String       @unique
+  description String?
+  teacherId   String?      @db.ObjectId
+  teacher     Teacher?     @relation("ClassTeacher", fields: [teacherId], references: [id])
+  students    Student[]
+  subjects    Subject[]
+  exams       Exam[]
+  semesters   Semester[]
+  attendance  Attendance[]
+  onlineExams OnlineExam[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("classes")
+}
+
+model Subject {
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  code        String
+  classId     String       @db.ObjectId
+  class       Class        @relation(fields: [classId], references: [id])
+  teacherId   String?      @db.ObjectId
+  teacher     Teacher?     @relation(fields: [teacherId], references: [id])
+  semesterId  String?      @db.ObjectId
+  semester    Semester?    @relation(fields: [semesterId], references: [id])
+  exams       Exam[]
+  attendance  Attendance[]
+  onlineExams OnlineExam[]
+
+  @@map("subjects")
+}
+
+model Semester {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  startDate DateTime?
+  endDate   DateTime?
+  status    String    @default("UPCOMING")
+  classId   String    @db.ObjectId
+  class     Class     @relation(fields: [classId], references: [id])
+  subjects  Subject[]
+  exams     Exam[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("semesters")
+}
+
+model Exam {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  name       String
+  date       DateTime 
+  semesterId String   @db.ObjectId
+  semester   Semester @relation(fields: [semesterId], references: [id])
+  classId    String   @db.ObjectId
+  class      Class    @relation(fields: [classId], references: [id])
+  subjectId  String   @db.ObjectId
+  subject    Subject  @relation(fields: [subjectId], references: [id])
+  results    Result[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("exams")
+}
+
+// --------------------------------------
+// 5. DAILY OPERATIONS
+// --------------------------------------
+
+model Attendance {
+  id        String           @id @default(auto()) @map("_id") @db.ObjectId
+  date      DateTime         @default(now())
+  status    AttendanceStatus
+  studentId String           @db.ObjectId
+  student   Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId   String           @db.ObjectId
+  class     Class            @relation(fields: [classId], references: [id])
+  subjectId String?          @db.ObjectId
+  subject   Subject?         @relation(fields: [subjectId], references: [id])
+  markedBy  String           @db.ObjectId
+  teacher   Teacher          @relation(fields: [markedBy], references: [id])
+
+  @@map("attendance")
+}
+
+model Result {
+  id            String  @id @default(auto()) @map("_id") @db.ObjectId
+  marksObtained Float
+  totalMarks    Float   @default(100)
+  studentId     String  @db.ObjectId
+  student       Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  examId        String  @db.ObjectId
+  exam          Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@map("results")
+}
+
+// --------------------------------------
+// 6. INVENTORY
+// --------------------------------------
+
+model InventoryItem {
+  id         String      @id @default(auto()) @map("_id") @db.ObjectId
+  name       String
+  category   String
+  quantity   Int         @default(0)
+  price      Float       @default(0.0)
+
+  @@map("inventory_items")
+}
+
+// --------------------------------------
+// 7. LIBRARY MODULE
+// --------------------------------------
+
+model Book {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  title     String
+  author    String
+  isbn      String   @unique
+  category  String
+  quantity  Int      @default(1)
+  available Int      @default(1)
+  loans     Loan[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("books")
+}
+
+model Loan {
+  id         String     @id @default(auto()) @map("_id") @db.ObjectId
+  bookId     String     @db.ObjectId
+  book       Book       @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  studentId  String?    @db.ObjectId
+  student    Student?   @relation(fields: [studentId], references: [id])
+  teacherId  String?    @db.ObjectId
+  teacher    Teacher?   @relation(fields: [teacherId], references: [id])
+  issueDate  DateTime   @default(now())
+  dueDate    DateTime
+  returnDate DateTime?
+  status     LoanStatus @default(ISSUED)
+
+  @@map("loans")
+}
+
+// --------------------------------------
+// 8. HOSTEL MANAGEMENT
+// --------------------------------------
+
+model Hostel {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String   @unique
+  type      String   // e.g., "BOYS", "GIRLS"
+  capacity  Int
+  rooms     Room[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("hostels")
+}
+
+model Room {
+  id           String            @id @default(auto()) @map("_id") @db.ObjectId
+  roomNumber   String
+  floor        Int?
+  capacity     Int               @default(1)
+  isAC         Boolean           @default(false) 
+  hostelId     String            @db.ObjectId
+  hostel       Hostel            @relation(fields: [hostelId], references: [id], onDelete: Cascade)
+  allocations  HostelAdmission[]
+
+  @@map("rooms")
+}
+
+model HostelAdmission {
+  id            String       @id @default(auto()) @map("_id") @db.ObjectId
+  studentId     String       @unique @db.ObjectId
+  student       Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  roomId        String       @db.ObjectId
+  room          Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  status        HostelStatus @default(OCCUPIED) 
+  admissionDate DateTime     @default(now())
+  checkoutDate  DateTime?
+
+  @@map("hostel_admissions")
+}
+
+model GatePass {
+  id        String         @id @default(auto()) @map("_id") @db.ObjectId
+  studentId String         @db.ObjectId
+  student   Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  reason    String
+  date      DateTime
+  outTime   String         
+  inTime    String         
+  status    GatePassStatus @default(PENDING)
+  adminId   String?        @db.ObjectId
+  admin     Admin?         @relation(fields: [adminId], references: [id])
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@map("gate_passes")
+}
+
+// --------------------------------------
+// 9. COMMUNICATION & LOGS
+// --------------------------------------
+
+model Announcement {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  title     String
+  content   String
+  target    String
+  date      DateTime @default(now())
+  authorId  String   @db.ObjectId
+  author    User     @relation(fields: [authorId], references: [id])
+
+  @@map("announcements")
+}
+
+model Complaint {
+  id          String          @id @default(auto()) @map("_id") @db.ObjectId
+  subject     String
+  category    String          
+  description String
+  status      ComplaintStatus @default(PENDING)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  studentId   String          @db.ObjectId
+  student     Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("complaints")
+}
+
+model Activity {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  action    String
+  message   String
+  createdAt DateTime @default(now())
+
+  @@map("activities")
+}
+
+// --------------------------------------
+// 10. ONLINE EXAMINATION
+// --------------------------------------
+
+model OnlineExam {
+  id          String           @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  description String?
+  date        DateTime
+  duration    Int
+  classId     String           @db.ObjectId
+  class       Class            @relation(fields: [classId], references: [id])
+  subjectId   String           @db.ObjectId
+  subject     Subject          @relation(fields: [subjectId], references: [id])
+  teacherId   String           @db.ObjectId
+  teacher     Teacher          @relation(fields: [teacherId], references: [id])
+  questions   Question[]
+  submissions TestSubmission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("online_exams")
+}
+
+model Question {
+  id            String     @id @default(auto()) @map("_id") @db.ObjectId
+  questionText  String
+  options       String
+  correctOption Int
+  marks         Int        @default(1)
+  examId        String     @db.ObjectId
+  exam          OnlineExam @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@map("questions")
+}
+
+model TestSubmission {
+  id          String     @id @default(auto()) @map("_id") @db.ObjectId
+  studentId   String     @db.ObjectId
+  student     Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  examId      String     @db.ObjectId
+  exam        OnlineExam @relation(fields: [examId], references: [id], onDelete: Cascade)
+  score       Float
+  answers     String
+  submittedAt DateTime   @default(now())
+
+  @@map("test_submissions")
+}
+
+model Inquiry {
+  id       String   @id @default(auto()) @map("_id") @db.ObjectId
+  fullName String
+  email    String
+  phone    String
+  course   String?
+  message  String
+  status   String   @default("PENDING")
+  date     DateTime @default(now())
+
+  @@map("inquiries")
+}

@@ -1,0 +1,13 @@
+# Environment variables (MUST BE IGNORED)
+.env
+.env.local
+.env.development
+.env.production
+
+# Prisma-specific ignores
+/server/prisma/dev.db
+/server/prisma/dev.db-journal
+
+# Compiled backend files
+dist/
+out/
